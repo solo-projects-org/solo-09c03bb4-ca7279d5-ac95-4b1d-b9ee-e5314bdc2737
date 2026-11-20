@@ -18,8 +18,8 @@ import sqlite3
 from dataclasses import dataclass, field
 
 from . import config
-from .database import write_transaction
-from .stats import block_of, recompute_blocks
+from .database import get_data_version, write_transaction
+from .stats import block_of, recompute_blocks, registered_block_sizes
 
 # 表头别名 -> 标准字段
 _COLUMN_ALIASES = {
@@ -176,7 +176,7 @@ def ingest_batch(
         survey_nos=sorted({r.survey_no for r in readings}),
         rows_received=len(readings),
     )
-    touched: set[tuple[int, int]] = set()
+    touched_cells: set[tuple[int, int]] = set()
 
     with write_transaction(conn) as tx:
         for r in readings:
@@ -209,10 +209,28 @@ def ingest_batch(
                 (phase, r.x, r.y, r.survey_no, r.depth_cm),
             )
             result.rows_applied += 1
-            touched.add(block_of(r.x, r.y))
+            touched_cells.add((r.x, r.y))
 
-        recompute_blocks(tx, touched)
-        result.blocks_touched = sorted(touched)
+        if touched_cells:
+            # 共用库的每台服务可能有不同块大小: 对每种已登记尺寸,
+            # 只重算本批写入格落在其中的块; 未登记的尺寸不代算,
+            # 由该尺寸的实例启动对账时补齐。
+            blocks_by_size: dict[int, set[tuple[int, int]]] = {}
+            for size in registered_block_sizes(tx):
+                blocks_by_size[size] = {
+                    block_of(x, y, size) for x, y in touched_cells
+                }
+            recompute_blocks(tx, blocks_by_size)
+            new_version = get_data_version(tx)
+            tx.executemany(
+                "UPDATE block_size_registry SET stats_version = ? "
+                "WHERE block_size = ?",
+                [(new_version, size) for size in blocks_by_size],
+            )
+            # 响应里的 blocks_touched 按本机块大小报告, 网页展示不变
+            result.blocks_touched = sorted(
+                blocks_by_size.get(config.BLOCK_SIZE, set())
+            )
         _record_batch(tx, result)
 
     return result

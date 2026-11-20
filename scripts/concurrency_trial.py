@@ -3,9 +3,11 @@ import concurrent.futures as cf
 import csv
 import io
 import json
+import os
 import urllib.request
 
-BASE = "http://127.0.0.1:8000"
+# 可用环境变量 BASE 指向其它地址 (默认本机 8000)
+BASE = os.environ.get("BASE", "http://127.0.0.1:8000")
 
 
 def post(path, content):

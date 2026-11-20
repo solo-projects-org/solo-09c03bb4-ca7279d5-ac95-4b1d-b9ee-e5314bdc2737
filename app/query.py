@@ -74,12 +74,13 @@ def _whole_aggregate(
     s = config.BLOCK_SIZE
     bx0, by0, bx1, by1 = cx0 // s, cy0 // s, cx1 // s, cy1 // s
 
-    # 只取 before 行即可: before/after 两行的配对指标完全相同
+    # 只取 before 行即可: before/after 两行的配对指标完全相同。
+    # block_size = 本机块大小: 共用库中其它尺寸的汇总行不参与本机核量。
     rows = conn.execute(
         "SELECT bx, by, n_matched, diff_cm FROM block_stats "
-        "WHERE phase = 'before' "
+        "WHERE block_size = ? AND phase = 'before' "
         "AND bx BETWEEN ? AND ? AND by BETWEEN ? AND ?",
-        (bx0, bx1, by0, by1),
+        (config.BLOCK_SIZE, bx0, bx1, by0, by1),
     ).fetchall()
 
     return (

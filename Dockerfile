@@ -3,7 +3,8 @@ FROM python:3.11-slim
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     DB_PATH=/data/dredging.db \
-    BLOCK_SIZE=16
+    BLOCK_SIZE=16 \
+    BUSY_TIMEOUT_S=30
 
 WORKDIR /app
 

@@ -15,6 +15,7 @@ from . import config
 from .database import connect, get_data_version, init_db
 from .ingest import IngestError, ingest_batch, parse_csv, record_rejection
 from .query import QueryError, select_rectangle
+from .stats import ensure_block_size
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "web"
 
@@ -22,8 +23,21 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "web"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     conn = connect()
-    init_db(conn)
-    conn.close()
+    try:
+        init_db(conn)
+        # 登记本机 BLOCK_SIZE 并对账: 新尺寸全量建汇总; 若本实例停用期间
+        # 其它实例做过补测 (汇总版本落后于数据版本), 在此一次性补齐。
+        reconciliation = ensure_block_size(conn, config.BLOCK_SIZE)
+        if reconciliation["action"] != "up-to-date":
+            name = f"[{config.INSTANCE_NAME}] " if config.INSTANCE_NAME else ""
+            print(
+                f"{name}[startup] block_size={config.BLOCK_SIZE} "
+                f"{reconciliation['action']} 完成: "
+                f"重算 {reconciliation['blocks']} 块, "
+                f"数据版本 v{reconciliation['data_version']}"
+            )
+    finally:
+        conn.close()
     yield
 
 
@@ -39,7 +53,12 @@ app = FastAPI(
 def health() -> dict:
     conn = connect()
     try:
-        return {"status": "ok", "data_version": get_data_version(conn)}
+        return {
+            "status": "ok",
+            "instance": config.INSTANCE_NAME or None,
+            "block_size": config.BLOCK_SIZE,
+            "data_version": get_data_version(conn),
+        }
     finally:
         conn.close()
 
@@ -152,12 +171,17 @@ def cells(
 
 @app.get("/api/blocks")
 def blocks() -> dict:
-    """分块统计全表 (调试与核对用)。"""
+    """本机块大小的分块统计全表 (调试与核对用)。
+
+    共用库中可能存在其它 BLOCK_SIZE 实例的汇总行, 这里只返回本机尺寸。
+    """
     conn = connect()
     try:
         rows = conn.execute(
-            "SELECT bx, by, phase, n_cells, n_nonnull, sum_depth_cm, "
-            "n_matched, diff_cm FROM block_stats ORDER BY bx, by, phase"
+            "SELECT block_size, bx, by, phase, n_cells, n_nonnull, sum_depth_cm, "
+            "n_matched, diff_cm FROM block_stats "
+            "WHERE block_size = ? ORDER BY bx, by, phase",
+            (config.BLOCK_SIZE,),
         ).fetchall()
         return {
             "block_size": config.BLOCK_SIZE,

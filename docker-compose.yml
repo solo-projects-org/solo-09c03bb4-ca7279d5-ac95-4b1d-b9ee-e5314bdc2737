@@ -1,18 +1,45 @@
 services:
-  dredging:
+  # 实例 A: 块边长 16 格
+  dredging-a:
     build: .
-    image: dredging-acceptance:1.0.0
-    container_name: dredging-acceptance
+    image: dredging-acceptance:1.1.0
+    container_name: dredging-acceptance-a
     ports:
       - "8000:8000"
     environment:
-      # 每个统计块的边长 (格), 块 = BLOCK_SIZE x BLOCK_SIZE 个 1 米方格
+      # 每个统计块的边长 (格), 两台实例各自不同, 共用同一数据库文件
       BLOCK_SIZE: "16"
-      BUSY_TIMEOUT_S: "10"
+      BUSY_TIMEOUT_S: "30"
       DB_PATH: "/data/dredging.db"
+      INSTANCE_NAME: "A(16)"
     volumes:
       - dredging-data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+  # 实例 B: 块边长 10 格, 与 A 共用同一个命名卷 (同一个 SQLite 库)
+  dredging-b:
+    build: .
+    image: dredging-acceptance:1.1.0
+    container_name: dredging-acceptance-b
+    ports:
+      - "8001:8000"
+    environment:
+      BLOCK_SIZE: "10"
+      BUSY_TIMEOUT_S: "30"
+      DB_PATH: "/data/dredging.db"
+      INSTANCE_NAME: "B(10)"
+    volumes:
+      - dredging-data:/data
+    restart: unless-stopped
+    depends_on:
+      dredging-a:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)"]

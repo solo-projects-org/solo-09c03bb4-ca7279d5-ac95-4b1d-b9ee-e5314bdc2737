@@ -19,6 +19,9 @@ def _int_env(name: str, default: int) -> int:
 # 每个统计块的边长 (格), 块 = BLOCK_SIZE x BLOCK_SIZE 个 1 米方格
 BLOCK_SIZE: int = _int_env("BLOCK_SIZE", 16)
 
+# 实例名 (仅用于 /health 展示与日志, 多实例共用库时便于辨认)
+INSTANCE_NAME: str = os.environ.get("INSTANCE_NAME", "").strip()
+
 # SQLite 数据库文件默认路径 (容器内 /data 为挂载卷);
 # 实际路径在 database.connect() 中动态解析 DB_PATH 环境变量
 DB_PATH: Path = Path("/data/dredging.db")
