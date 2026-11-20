@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>港池疏浚验收计量</title>
+<style>
+  :root { --bd: #d0d7de; --bg: #f6f8fa; --blue: #0969da; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 -apple-system, "Segoe UI", "PingFang SC",
+        "Microsoft YaHei", sans-serif; color: #1f2328; }
+  header { padding: 12px 20px; background: #0d2b45; color: #fff; }
+  header h1 { margin: 0; font-size: 18px; }
+  header small { color: #b6c6d8; }
+  main { display: grid; grid-template-columns: 320px 1fr; gap: 16px;
+         padding: 16px 20px; }
+  .card { border: 1px solid var(--bd); border-radius: 8px; padding: 14px;
+          background: #fff; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 10px; font-size: 15px; }
+  .up { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+  .up label { width: 52px; font-weight: 600; }
+  input[type=file] { max-width: 170px; }
+  button { background: var(--blue); color: #fff; border: 0; border-radius: 6px;
+           padding: 7px 14px; cursor: pointer; font-size: 13px; }
+  button.secondary { background: #eaeef2; color: #1f2328; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .msg { font-size: 12px; margin-top: 6px; white-space: pre-wrap;
+         word-break: break-all; }
+  .ok { color: #1a7f37; } .err { color: #cf222e; } .mut { color: #656d76; }
+  .kv { display: grid; grid-template-columns: 110px 1fr; gap: 4px 8px;
+        font-size: 13px; }
+  .kv b { text-align: right; color: #57606a; font-weight: 600; }
+  .num { font-variant-numeric: tabular-nums; }
+  canvas { border: 1px solid var(--bd); border-radius: 6px; background: var(--bg);
+           cursor: crosshair; max-width: 100%; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px;
+            margin-top: 8px; color: #57606a; }
+  .sw { display: inline-block; width: 12px; height: 12px; border: 1px solid #999;
+        vertical-align: -1px; margin-right: 4px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { border: 1px solid var(--bd); padding: 3px 6px; text-align: right;
+           font-variant-numeric: tabular-nums; }
+  th { background: var(--bg); }
+  .tag-accepted { color: #1a7f37; } .tag-rejected { color: #cf222e; }
+  code { background: var(--bg); padding: 1px 4px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>港池疏浚验收计量系统</h1>
+  <small>1 米方格 · 厘米水深 · 整块汇总 + 边缘细格 · 同一已提交快照核量</small>
+</header>
+
+<main>
+  <section>
+    <div class="card">
+      <h2>① 上传测深 CSV</h2>
+      <div class="up">
+        <label>前测</label>
+        <input type="file" id="file-before" accept=".csv,text/csv" />
+        <button data-phase="before">上传</button>
+      </div>
+      <div class="up">
+        <label>后测</label>
+        <input type="file" id="file-after" accept=".csv,text/csv" />
+        <button data-phase="after">上传</button>
+      </div>
+      <div id="up-msg" class="msg mut">表头示例: x,y,survey_no,depth_cm（空 depth_cm 即空水深）</div>
+    </div>
+
+    <div class="card">
+      <h2>② 框选矩形核量</h2>
+      <p class="mut" style="margin:4px 0 8px;font-size:12px">
+        在右侧画布按住鼠标沿格线拖选；也可直接输入整数格坐标。
+      </p>
+      <div class="kv">
+        <b>x0</b><input id="r-x0" type="number" />
+        <b>y0</b><input id="r-y0" type="number" />
+        <b>x1</b><input id="r-x1" type="number" />
+        <b>y1</b><input id="r-y1" type="number" />
+      </div>
+      <div style="margin-top:10px; display:flex; gap:8px">
+        <button id="btn-select">核量</button>
+        <button id="btn-cellwise" class="secondary">细格校验</button>
+        <button id="btn-clear" class="secondary">清除</button>
+      </div>
+      <div id="sel-msg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>核量结果</h2>
+      <div class="kv" id="result">
+        <b>两期共测面积</b><span class="num" id="r-area">—</span>
+        <b>净挖方 (m³)</b><span class="num" id="r-vol">—</span>
+        <b>整块数</b><span class="num" id="r-blocks">—</span>
+        <b>边缘细格</b><span class="num" id="r-edge">—</span>
+        <b>数据版本</b><span class="num" id="r-ver">—</span>
+        <b>计算模式</b><span class="num" id="r-mode">—</span>
+      </div>
+      <p class="mut" style="font-size:12px;margin-bottom:0">
+        净挖方 = Σ(后测水深 − 前测水深)，负值表示回淤，照计。
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>批次留痕</h2>
+      <div style="max-height:220px; overflow:auto">
+        <table id="batch-table">
+          <thead><tr><th>#</th><th>期</th><th>测次</th><th>行数</th><th>状态</th><th>原因</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>测深格网（颜色 = 前后水深差，红挖蓝淤）</h2>
+      <canvas id="map" width="820" height="620"></canvas>
+      <div class="legend">
+        <span><span class="sw" style="background:#b91c1c"></span>挖深</span>
+        <span><span class="sw" style="background:#f8fafc"></span>无差值/单期</span>
+        <span><span class="sw" style="background:#1d4ed8"></span>回淤</span>
+        <span><span class="sw" style="background:#94a3b8"></span>空水深</span>
+        <span><span class="sw" style="background:#fde68a"></span>框选区</span>
+        <span>粗线为块边界（<span id="bsize">16</span>×<span id="bsize2">16</span> 格）</span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
